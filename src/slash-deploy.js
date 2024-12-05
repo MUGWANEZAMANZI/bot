@@ -1,6 +1,5 @@
 const { REST, Routes } = require("discord.js");
-require("dotenv").config({ path: '../.env' });
-
+require("dotenv").config({ path: './.env' });
 
 const botToken = process.env.BOT_TOKEN;
 const botID = "1311367868494909613"; // Replace with your bot's client ID
@@ -11,7 +10,7 @@ console.log('Bot token:', botToken);
 const commands = [
     {
         name: "work",
-        description: "Earn random coins (200-300).",
+        description: "Earn random coins every 2 hours (200-300).",
     },
     {
         name: "coins",
@@ -43,6 +42,18 @@ const commands = [
                 name: "username",
                 type: 6, // USER
                 description: "User to add.",
+                required: true,
+            },
+        ],
+    },
+    {
+        name: "create_team",
+        description: "Create a team channel.",
+        options: [
+            {
+                name: "teamname",
+                type: 3, // STRING
+                description: "The name of the team channel.",
                 required: true,
             },
         ],
