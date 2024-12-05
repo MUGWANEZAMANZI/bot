@@ -1,6 +1,6 @@
 const { Client, GatewayIntentBits, REST, Routes } = require("discord.js"); // Import REST and Routes
 const sqlite3 = require("sqlite3").verbose();
-require("dotenv").config({path :"../.env"}); // Load environment variables
+require("dotenv").config({path :"./.env"}); // Load environment variables
 
 // Initialize bot
 const client = new Client({
