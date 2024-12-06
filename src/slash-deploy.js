@@ -1,12 +1,12 @@
 const { REST, Routes } = require("discord.js");
-require("dotenv").config({ path: "./.env" });
+require("dotenv").config({ path: "/.env" });
 
 const botToken = process.env.BOT_TOKEN;
-const botID = "1311367868494909613"; // Replace with your bot's client ID
-const serverID = "1309117454747701299"; // Replace with your server ID
+const botID = process.env.CLIENT_ID; // Ensure this is set in .env
+const serverID = process.env.GUILD_ID; // Ensure this is set in .env
 
-if (!botToken) {
-    console.error("Error: BOT_TOKEN is not defined in the .env file.");
+if (!botToken || !botID || !serverID) {
+    console.error("Error: BOT_TOKEN, CLIENT_ID, or GUILD_ID is not defined in the .env file.");
     process.exit(1);
 }
 
@@ -68,9 +68,7 @@ const rest = new REST({ version: "10" }).setToken(botToken);
 (async () => {
     try {
         console.log("Registering slash commands...");
-        await rest.put(Routes.applicationGuildCommands(botID, serverID), {
-            body: commands,
-        });
+        await rest.put(Routes.applicationGuildCommands(botID, serverID), { body: commands });
         console.log("Slash commands registered successfully!");
     } catch (error) {
         console.error("Failed to register slash commands:", error.message);
