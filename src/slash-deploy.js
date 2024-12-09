@@ -13,7 +13,7 @@ if (!botToken || !botID || !serverID) {
 const commands = [
     {
         name: "work",
-        description: "Earn random coins every 2 hours (200-300).",
+        description: "Earn random coins every 1 hour (200-300).",
     },
     {
         name: "coins",
