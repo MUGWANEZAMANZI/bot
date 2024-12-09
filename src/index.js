@@ -1,3 +1,17 @@
+const express = require("express");
+const app = express();
+
+const PORT = process.env.PORT || 3000; // Render will provide a PORT value, Setting up a server
+app.get("/", (req, res) => {
+    res.send("Bot is running! 🚀");
+});
+
+app.listen(PORT, () => {
+    console.log(`HTTP server listening on port ${PORT}`);
+});
+
+
+
 const { Client, GatewayIntentBits, Partials } = require("discord.js");
 const sqlite3 = require("sqlite3").verbose();
 require("dotenv").config({ path: "./.env" });
