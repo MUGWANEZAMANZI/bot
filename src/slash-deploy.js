@@ -1,3 +1,4 @@
+
 const { REST, Routes } = require("discord.js");
 require("dotenv").config({ path: "./.env" });
 
@@ -61,6 +62,48 @@ const commands = [
             },
         ],
     },
+    {
+        name: "buy",
+        description: "Buy tiers or forms.",
+        options: [
+            {
+                name: "tiers",
+                type: 1, // Subcommand
+                description: "Choose a tier to buy",
+                options: [
+                    {
+                        name: "tier",
+                        type: 3, // STRING
+                        description: "Choose a tier to buy",
+                        required: true,
+                        choices: [
+                            { name: "T1", value: "t1" },
+                            { name: "T2", value: "t2" },
+                            { name: "T3", value: "t3" },
+                            { name: "T4", value: "t4" },
+                        ],
+                    },
+                ],
+            },
+            {
+                name: "forms",
+                type: 1, // Subcommand
+                description: "Choose a form to buy",
+                options: [
+                    {
+                        name: "form",
+                        type: 3, // STRING
+                        description: "Choose a form",
+                        required: true,
+                        choices: [
+                            { name: "Registration", value: "registration" },
+                            { name: "Submission", value: "submission" },
+                        ],
+                    },
+                ],
+            },
+        ],
+    },
 ];
 
 const rest = new REST({ version: "10" }).setToken(botToken);
@@ -77,3 +120,4 @@ const rest = new REST({ version: "10" }).setToken(botToken);
         }
     }
 })();
+

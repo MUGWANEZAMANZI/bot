@@ -1,271 +1,263 @@
-const express = require("express");
-const app = express();
-
-const PORT = process.env.PORT || 3000; // Render will provide a PORT value, Setting up a server
-app.get("/", (req, res) => {
-    res.send("Bot is running! 🚀");
-});
-
-app.listen(PORT, () => {
-    console.log(`HTTP server listening on port ${PORT}`);
-});
-
-
-
-
-const { Client, GatewayIntentBits, Partials, PermissionsBitField } = require("discord.js");
+const { Client, GatewayIntentBits, Partials } = require("discord.js");
 const sqlite3 = require("sqlite3").verbose();
 require("dotenv").config({ path: "./.env" });
 
-// Initialize bot
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers,
-    ],
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.MessageContent],
     partials: [Partials.Channel],
 });
 
 // Database setup
 const db = new sqlite3.Database("./coins.db", (err) => {
     if (err) {
-        console.error("Database Error:", err.message);
+        console.error("Database connection failed:", err.message);
         process.exit(1);
     }
     console.log("Connected to SQLite database.");
 });
 
-// Create table if it doesn't exist
-db.run(
-    `CREATE TABLE IF NOT EXISTS users (
+db.run(`
+    CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         coins INTEGER DEFAULT 0,
         last_work INTEGER DEFAULT 0
-    )`,
-    (err) => {
-        if (err) {
-            console.error("Error creating table:", err.message);
-            process.exit(1);
-        }
-        console.log("Table 'users' is set up.");
-    }
-);
+    )
+`);
 
-// Ready event
+db.run(`
+    CREATE TABLE IF NOT EXISTS teams (
+        id TEXT PRIMARY KEY,
+        teamname TEXT,
+        members TEXT
+    )
+`);
+
+db.run(`
+    CREATE TABLE IF NOT EXISTS channels (
+        id TEXT PRIMARY KEY,
+        team_id TEXT,
+        channel_id TEXT
+    )
+`);
+
+const TIER_PRICES = { t1: 1000, t2: 2000, t3: 5000, t4: 10000 };
+const REGISTRATION_PRICE = 2500;
+
+// Bot ready
 client.once("ready", () => {
-    console.log(`🚀 Bot is online as ${client.user.tag}!`);
+    console.log(`Bot is online as ${client.user.tag}`);
 });
 
-// Slash Command Handling
+// Slash commands handling
 client.on("interactionCreate", async (interaction) => {
     if (!interaction.isCommand()) return;
 
     const { commandName, user, options } = interaction;
 
-    try {
-        // Command: /add
-        if (commandName === "add") {
-            const targetUser = options.getUser("username");
-            if (!targetUser) return interaction.reply("⚠️ Invalid user!");
+    if (commandName === "buy") {
+        const category = options.getString("category");
+        const tier = options.getString("tier");
+        const form = options.getString("form");
+        const userId = user.id;
 
-            const member = await interaction.guild.members.fetch(user.id);
-            const teamLeaderRole = interaction.guild.roles.cache.find(
-                (role) => role.name === "Team Leader"
-            );
-
-            if (!teamLeaderRole || !member.roles.cache.has(teamLeaderRole.id)) {
-                return interaction.reply("🚫 You must be a **Team Leader** to add members to a team.");
+        db.get("SELECT coins FROM users WHERE id = ?", [userId], (err, row) => {
+            if (err) {
+                console.error("Database error:", err.message);
+                return interaction.reply("⚠️ An error occurred while retrieving your coins.");
             }
 
-            const channel = interaction.guild.channels.cache.get(interaction.channelId);
-            await channel.permissionOverwrites.create(targetUser, {
-                ViewChannel: true,
-                SendMessages: true,
-            });
+            const coins = row ? row.coins : 0;
 
-            return interaction.reply(`✅ **${targetUser.username}** has been added to this team channel.`);
-        }
-
-        // Command: /create_team
-        if (commandName === "create_team") {
-            const teamName = options.getString("teamname");
-            if (!teamName) return interaction.reply("⚠️ You must provide a team name.");
-
-            const member = await interaction.guild.members.fetch(user.id);
-            const teamLeaderRole = interaction.guild.roles.cache.find(
-                (role) => role.name === "Team Leader"
-            );
-
-            if (!teamLeaderRole || !member.roles.cache.has(teamLeaderRole.id)) {
-                return interaction.reply("🚫 You must be a **Team Leader** to create a team channel.");
-            }
-
-            const existingChannel = interaction.guild.channels.cache.find(
-                (channel) => channel.name === teamName
-            );
-
-            if (existingChannel) {
-                return interaction.reply(`⚠️ A channel named '**${teamName}**' already exists.`);
-            }
-
-            await interaction.guild.channels.create({
-                name: teamName,
-                type: 0, // Type 0 for text channels
-                permissionOverwrites: [
-                    {
-                        id: interaction.guild.id,
-                        deny: [PermissionsBitField.Flags.ViewChannel],
-                    },
-                    {
-                        id: member.id,
-                        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages],
-                    },
-                ],
-            });
-
-            return interaction.reply(`✅ Team channel '**${teamName}**' has been created.`);
-        }
-
-        // Command: /work
-        if (commandName === "work") {
-            const randomCoins = Math.floor(Math.random() * 101) + 200; // Random between 200-300
-            const userId = user.id;
-
-            db.get("SELECT last_work FROM users WHERE id = ?", [userId], (err, row) => {
-                if (err) {
-                    console.error("Database Error (Work Command):", err.message);
-                    return interaction.reply("⚠️ Failed to process your work request.");
+            if (category === "tiers") {
+                if (!tier || !TIER_PRICES[tier]) {
+                    return interaction.reply("⚠️ Invalid tier selected. Choose from T1, T2, T3, or T4.");
                 }
 
-                const now = Date.now();
-                const lastWork = row ? row.last_work : 0;
-
-                if (now - lastWork < 3600000) { // 1 hour in milliseconds
-                    const remainingTime = Math.ceil((3600000 - (now - lastWork)) / 60000); // Convert to minutes
-                    return interaction.reply(`⏳ You can work again in **${remainingTime} minutes**.`);
+                const price = TIER_PRICES[tier];
+                if (coins < price) {
+                    return interaction.reply(`🚫 You don't have enough coins to buy **${tier.toUpperCase()}**.`);
                 }
 
-                db.run(
-                    `INSERT INTO users (id, coins, last_work) 
-                     VALUES (?, ?, ?) 
-                     ON CONFLICT(id) DO UPDATE SET 
-                     coins = coins + ?, 
-                     last_work = ?`,
-                    [userId, randomCoins, now, randomCoins, now],
-                    (err) => {
-                        if (err) {
-                            console.error("Database Error (Work Command):", err.message);
-                            return interaction.reply("⚠️ Failed to update your coins.");
-                        }
-                        interaction.reply(`💼 **Work Completed!** You earned **${randomCoins} coins** 🪙!`);
+                db.run("UPDATE users SET coins = coins - ? WHERE id = ?", [price, userId], (err) => {
+                    if (err) {
+                        console.error("Database update error:", err.message);
+                        return interaction.reply("⚠️ Failed to process your purchase.");
                     }
-                );
-            });
-        }
+                    interaction.reply(`✅ You successfully purchased **${tier.toUpperCase()}** for **${price} coins**!`);
 
-        // Command: /coins
-        if (commandName === "coins") {
-            const userId = user.id;
+                    // Assign role with icon for the tier
+                    const tierRoleName = `Tier ${tier.toUpperCase()}`;
+                    let roleIcon;
+                    switch(tier) {
+                        case 't1': roleIcon = '🟢'; break;
+                        case 't2': roleIcon = '🟠'; break;
+                        case 't3': roleIcon = '🔵'; break;
+                        case 't4': roleIcon = '🟣'; break;
+                        default: roleIcon = '⚪';
+                    }
 
-            db.get("SELECT coins FROM users WHERE id = ?", [userId], (err, row) => {
-                if (err) {
-                    console.error("Database Error (Coins Command):", err.message);
-                    return interaction.reply("⚠️ Failed to retrieve your coin balance.");
-                }
-                const coins = row ? row.coins : 0;
-                interaction.reply(`💰 You have **${coins} coins** 🪙.`);
-            });
-        }
-
-        // Command: /give
-        if (commandName === "give") {
-            const targetUser = options.getUser("username");
-            const amount = options.getInteger("amount");
-
-            if (!targetUser || !amount || amount <= 0) {
-                return interaction.reply("⚠️ Invalid user or coin amount.");
-            }
-
-            const senderId = user.id;
-
-            db.get("SELECT coins FROM users WHERE id = ?", [senderId], (err, row) => {
-                if (err) {
-                    console.error("Database Error (Give Command):", err.message);
-                    return interaction.reply("⚠️ Failed to retrieve your coin balance.");
-                }
-
-                const senderCoins = row ? row.coins : 0;
-                if (senderCoins < amount) {
-                    return interaction.reply("🚫 You don't have enough coins to give.");
-                }
-
-                db.run(
-                    "UPDATE users SET coins = coins - ? WHERE id = ?",
-                    [amount, senderId],
-                    (err) => {
-                        if (err) {
-                            console.error("Database Error (Give Command - Deduct):", err.message);
-                            return interaction.reply("⚠️ Failed to update sender's coin balance.");
-                        }
-
-                        db.run(
-                            `INSERT INTO users (id, coins) VALUES (?, ?) 
-                            ON CONFLICT(id) DO UPDATE SET coins = coins + ?`,
-                            [targetUser.id, amount, amount],
-                            (err) => {
-                                if (err) {
-                                    console.error("Database Error (Give Command - Add):", err.message);
-                                    return interaction.reply("⚠️ Failed to update recipient's coin balance.");
-                                }
-                                interaction.reply(
-                                    `✅ You gave **${amount} coins** 🪙 to **${targetUser.username}**!`
-                                );
+                    let role = interaction.guild.roles.cache.find(r => r.name === tierRoleName);
+                    if (!role) {
+                        interaction.guild.roles.create({
+                            name: tierRoleName,
+                            color: 'BLUE', // Customize this color
+                            hoist: true,
+                            unicodeEmoji: roleIcon,
+                        }).then(newRole => {
+                            const member = interaction.guild.members.cache.get(userId);
+                            if (member) {
+                                member.roles.add(newRole).catch(console.error);
                             }
-                        );
+                        }).catch(console.error);
                     }
-                );
-            });
-        }
-    } catch (error) {
-        console.error("Command Error:", error);
-        interaction.reply("❌ An unexpected error occurred.");
-    }
-});
-
-// Prefix Command: !elected
-client.on("messageCreate", async (message) => {
-    if (message.author.bot) return;
-
-    if (message.content.toLowerCase() === "!elected") {
-        try {
-            const guild = message.guild;
-            let teamLeaderRole = guild.roles.cache.find((role) => role.name === "Team Leader");
-
-            if (!teamLeaderRole) {
-                teamLeaderRole = await guild.roles.create({
-                    name: "Team Leader",
-                    color: "#0000FF",
-                    permissions: [PermissionsBitField.Flags.ManageChannels],
-                    reason: "Role required for team leaders",
                 });
+            } else if (category === "forms") {
+                if (!form || (form !== "registration" && form !== "submission")) {
+                    return interaction.reply("⚠️ Invalid form selected. Choose either Registration or Submission.");
+                }
+
+                if (form === "registration") {
+                    if (coins < REGISTRATION_PRICE) {
+                        return interaction.reply(`🚫 You don't have enough coins for registration. It costs **${REGISTRATION_PRICE} coins**.`);
+                    }
+
+                    db.run("UPDATE users SET coins = coins - ? WHERE id = ?", [REGISTRATION_PRICE, userId], (err) => {
+                        if (err) {
+                            console.error("Database update error:", err.message);
+                            return interaction.reply("⚠️ Failed to process your registration.");
+                        }
+                        interaction.reply(`✅ You successfully registered for **${REGISTRATION_PRICE} coins**!`);
+
+                        // Add icon role for registration
+                        const registrationRoleName = `Registration`;
+                        const registrationIcon = '📝';
+
+                        let registrationRole = interaction.guild.roles.cache.find(r => r.name === registrationRoleName);
+                        if (!registrationRole) {
+                            interaction.guild.roles.create({
+                                name: registrationRoleName,
+                                color: 'GREEN', // Customize this color
+                                hoist: true,
+                                unicodeEmoji: registrationIcon,
+                            }).then(newRole => {
+                                const member = interaction.guild.members.cache.get(userId);
+                                if (member) {
+                                    member.roles.add(newRole).catch(console.error);
+                                }
+                            }).catch(console.error);
+                        }
+                    });
+                } else if (form === "submission") {
+                    interaction.reply("✅ You chose the **Submission** form.");
+                }
+            } else {
+                interaction.reply("⚠️ Invalid category selected.");
+            }
+        });
+    } else if (commandName === "work") {
+        const userId = user.id;
+        const currentTime = Date.now();
+        const workCooldown = 3600000; // 1 hour cooldown
+
+        db.get("SELECT last_work FROM users WHERE id = ?", [userId], (err, row) => {
+            if (err) {
+                console.error("Database error:", err.message);
+                return interaction.reply("⚠️ An error occurred.");
             }
 
-            const member = await guild.members.fetch(message.author.id);
-            if (member.roles.cache.has(teamLeaderRole.id)) {
-                return message.reply("👑 You already have the **Team Leader** role.");
+            const lastWork = row ? row.last_work : 0;
+            const timeLeft = workCooldown - (currentTime - lastWork);
+
+            if (timeLeft > 0) {
+                return interaction.reply(`⏳ You can work again in **${Math.ceil(timeLeft / 60000)} minutes**.`);
             }
 
-            await member.roles.add(teamLeaderRole);
-            message.reply("🎉 You have been elected as a **Team Leader**!");
-        } catch (error) {
-            console.error("Error in !elected command:", error.message);
-            message.reply("⚠️ An error occurred while assigning the role.");
+            const coinsEarned = Math.floor(Math.random() * (300 - 200 + 1)) + 200;
+            db.run("UPDATE users SET coins = coins + ?, last_work = ? WHERE id = ?", [coinsEarned, currentTime, userId], (err) => {
+                if (err) {
+                    console.error("Database update error:", err.message);
+                    return interaction.reply("⚠️ Failed to earn coins.");
+                }
+                interaction.reply(`✅ You earned **${coinsEarned} coins**!`);
+            });
+        });
+    } else if (commandName === "coins") {
+        const userId = user.id;
+
+        db.get("SELECT coins FROM users WHERE id = ?", [userId], (err, row) => {
+            if (err) {
+                console.error("Database error:", err.message);
+                return interaction.reply("⚠️ An error occurred.");
+            }
+
+            const coins = row ? row.coins : 0;
+            interaction.reply(`💰 You currently have **${coins} coins**.`);
+        });
+    } else if (commandName === "give") {
+        const recipient = options.getUser("username");
+        const amount = options.getInteger("amount");
+        const userId = user.id;
+
+        if (recipient.id === userId) {
+            return interaction.reply("🚫 You cannot give coins to yourself.");
         }
+
+        db.get("SELECT coins FROM users WHERE id = ?", [userId], (err, row) => {
+            if (err) {
+                console.error("Database error:", err.message);
+                return interaction.reply("⚠️ An error occurred.");
+            }
+
+            const coins = row ? row.coins : 0;
+            if (coins < amount) {
+                return interaction.reply(`🚫 You don't have enough coins to give **${amount} coins**.`);
+            }
+
+            db.run("UPDATE users SET coins = coins - ? WHERE id = ?", [amount, userId], (err) => {
+                if (err) {
+                    console.error("Database update error:", err.message);
+                    return interaction.reply("⚠️ Failed to process your transfer.");
+                }
+                db.run("UPDATE users SET coins = coins + ? WHERE id = ?", [amount, recipient.id], (err) => {
+                    if (err) {
+                        console.error("Database update error:", err.message);
+                        return interaction.reply("⚠️ Failed to process the recipient's coins.");
+                    }
+                    interaction.reply(`✅ You gave **${amount} coins** to **${recipient.username}**!`);
+                });
+            });
+        });
+    } else if (commandName === "add") {
+        const userToAdd = options.getUser("username");
+
+        interaction.guild.channels.create(`private-${userToAdd.username}`, {
+            type: "GUILD_TEXT",
+            permissionOverwrites: [
+                {
+                    id: userToAdd.id,
+                    allow: ["VIEW_CHANNEL", "SEND_MESSAGES"],
+                },
+            ],
+        }).then(channel => {
+            interaction.reply(`✅ Added **${userToAdd.username}** to a private channel: ${channel.name}.`);
+        }).catch(err => {
+            console.error("Error creating private channel:", err.message);
+            interaction.reply("⚠️ Failed to add user to private channel.");
+        });
+    } else if (commandName === "create_team") {
+        const teamName = options.getString("teamname");
+        const teamId = `${teamName.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`;
+
+        db.run("INSERT INTO teams (id, teamname, members) VALUES (?, ?, ?)", [teamId, teamName, "[]"], (err) => {
+            if (err) {
+                console.error("Error creating team:", err.message);
+                return interaction.reply("⚠️ Failed to create team.");
+            }
+
+            interaction.reply(`✅ Team **${teamName}** created successfully!`);
+        });
     }
 });
 
-
-// Login the bot
+// Login bot
 client.login(process.env.BOT_TOKEN);
